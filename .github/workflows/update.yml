@@ -36,10 +36,8 @@ jobs:
           # place RSS as index.xml for easy access on Pages
           cp filtered.xml public/index.xml
 
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v2
+      - name: Upload Pages content as artifact
+        uses: actions/upload-artifact@v4
         with:
+          name: pages-public
           path: public
-
-      - name: Deploy to GitHub Pages
-        uses: actions/deploy-pages@v2
