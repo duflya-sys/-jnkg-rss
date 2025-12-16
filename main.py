@@ -9,14 +9,14 @@ from feedgen.feed import FeedGenerator
 
 BASE_URL = "https://dzzb.jnkgjtdzzbgs.com"
 KEY_WORDS = ["晋圣", "天安"]
-MAX_DAY = 10          # 只留最近 N 天
+MAX_PAGES = 10        # 查找前 N 页（1..N）
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (compatible; JNKG-Bot/1.0)"
 }
 
 
-def get_stop_day(max_day=MAX_DAY):
+def get_stop_day(max_day=10):
     return datetime.now() - timedelta(days=max_day)
 
 
@@ -38,6 +38,17 @@ def fetch_one_page(column_path, page=1):
         except Exception:
             pass
         return [], None
+    # log status and optionally save raw HTML for debugging
+    try:
+        status = r.status_code
+        import os
+        os.makedirs("debug_html", exist_ok=True)
+        fname = os.path.join("debug_html", f"{column_path}_{page}.html")
+        with open(fname, "w", encoding="utf-8") as fh:
+            fh.write(r.text)
+        print(f"[DEBUG] fetched {url} status={status} saved={fname}")
+    except Exception:
+        pass
 
     r.encoding = "utf-8"
     html = etree.HTML(r.text)
@@ -135,7 +146,7 @@ def fetch_column(column, max_pages=50, fetcher=None):
     """
     page = 1
     all_rows = []
-    stop_day = get_stop_day()
+    # 翻页直到达到 max_pages 或遇到空页；不再按日期过滤
     while page <= max_pages:
         if fetcher:
             rows, earliest = fetcher(column, page)
@@ -144,11 +155,9 @@ def fetch_column(column, max_pages=50, fetcher=None):
         if not rows:
             break
         all_rows.extend(rows)
-        if earliest and earliest < stop_day:
-            break
         page += 1
 
-    return [r for r in all_rows if r["pub_date"] >= stop_day]
+    return all_rows
 
 
 def main():
@@ -159,7 +168,7 @@ def main():
     fg = FeedGenerator()
     fg.title("晋能控股-晋圣/天安 招标监控")
     fg.link(href=BASE_URL, rel="alternate")
-    fg.description(f"近 {MAX_DAY} 天且含关键词{KEY_WORDS}")
+    fg.description(f"查找第1-{MAX_PAGES}页且含关键词{KEY_WORDS}")
     fg.language("zh-cn")
 
     total = 0
