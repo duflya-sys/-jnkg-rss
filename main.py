@@ -31,6 +31,12 @@ def fetch_one_page(column_path, page=1):
         r = requests.get(url, headers=HEADERS, timeout=20)
         r.raise_for_status()
     except requests.RequestException:
+        # log network error to help debugging (will return empty page)
+        try:
+            import sys
+            print(f"[WARN] fetch failed: {url}", file=sys.stderr)
+        except Exception:
+            pass
         return [], None
 
     r.encoding = "utf-8"
