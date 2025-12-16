@@ -8,6 +8,10 @@ on:
 
 jobs:
   build:
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,12 +22,22 @@ jobs:
         run: pip install -r requirements.txt
       - name: Run scraper
         run: python main.py
-      - name: Commit & push
+      - name: Upload RSS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: filtered-xml
+          path: filtered.xml
+
+      - name: Prepare Pages content
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          # suppress advice about adding ignored files (CI intends to commit generated artifact)
-          git config advice.addIgnoredFile false
-          # force-add since filtered.xml is listed in .gitignore on main branch
-          git add -f filtered.xml || true
-          git diff --cached --quiet || (git commit -m "update filtered.xml $(date +'%m-%d %H:%M')" && git push)
+          mkdir -p public
+          # place RSS as index.xml for easy access on Pages
+          cp filtered.xml public/index.xml
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v1
+        with:
+          path: public
+
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v1
