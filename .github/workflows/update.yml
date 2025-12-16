@@ -1,6 +1,8 @@
 name: Update Filtered RSS
 
 on:
+  push:
+    branches: [ main ]
   schedule:
     # 每 1440 分钟一次（免费额度足够）
     - cron: "*/1440 * * * *"
