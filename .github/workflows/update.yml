@@ -36,6 +36,18 @@ jobs:
           # place RSS as index.xml for easy access on Pages
           cp filtered.xml public/index.xml
 
+      - name: Verify Pages content
+        run: |
+          echo "Contents of public directory:"
+          ls -lah public/ || echo "public directory does not exist"
+          echo "---"
+          if [ -f public/index.xml ]; then
+            echo "public/index.xml exists and has $(wc -l < public/index.xml) lines"
+          else
+            echo "ERROR: public/index.xml does not exist"
+            exit 1
+          fi
+
       - name: Upload Pages content as artifact
         uses: actions/upload-artifact@v4
         with:
