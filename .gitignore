@@ -1,0 +1,31 @@
+# Python virtualenvs
+.venv/
+venv/
+env/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+
+# Editor directories
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+
+# Local env files
+.env
+
+# Generated RSS outputs
+filtered.xml
+filtered_dry.xml
+
+# pipenv
+Pipfile.lock
