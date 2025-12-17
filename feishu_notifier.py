@@ -144,29 +144,25 @@ https://ai.feishu.cn/base/OOYsbRScmaNEBYs5PsycX67anDb?table=tblZnQxACTwpTQN4&vie
 
 # 使用示例
 if __name__ == "__main__":
-    import os
-    # 为避免在仓库中泄露Webhook示例密钥，请通过环境变量提供 FEISHU_WEBHOOK_URL
-    WEBHOOK_URL = os.getenv("FEISHU_WEBHOOK_URL")
-    if not WEBHOOK_URL:
-        print("未设置环境变量 FEISHU_WEBHOOK_URL，跳过示例调用。")
-    else:
-        notifier = FeishuNotifier(WEBHOOK_URL)
-        
-        # 测试文本消息
-        notifier.send_text("测试：飞书机器人通知功能正常！")
-        
-        # 测试报告消息（文本格式）
-        notifier.send_crawler_report(
-            total_count=15,
-            success_count=10,
-            duplicate_count=3,
-            fail_count=2
-        )
-        
-        # 测试卡片消息（更美观）
-        notifier.send_crawler_report_with_card(
-            total_count=15,
-            success_count=10,
-            duplicate_count=3,
-            fail_count=2
-        )
+    # 替换成你机器人的真实Webhook URL
+    WEBHOOK_URL = "https://open.feishu.cn/open-apis/bot/v2/hook/d6701ea5-5f82-459a-8cb5-324c4f994077"
+    notifier = FeishuNotifier(WEBHOOK_URL)
+    
+    # 测试文本消息
+    notifier.send_text("测试：飞书机器人通知功能正常！")
+    
+    # 测试报告消息（文本格式）
+    notifier.send_crawler_report(
+        total_count=15,
+        success_count=10,
+        duplicate_count=3,
+        fail_count=2
+    )
+    
+    # 测试卡片消息（更美观）
+    notifier.send_crawler_report_with_card(
+        total_count=15,
+        success_count=10,
+        duplicate_count=3,
+        fail_count=2
+    )
