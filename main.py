@@ -1,232 +1,177 @@
-#!/usr/bin/env python3
-import argparse
-import hashlib
-import requests
-from datetime import datetime, timedelta
-from dateutil import parser as dtparser
-from lxml import etree
-from feedgen.feed import FeedGenerator
+import os
+import sys
+import pandas as pd
+from datetime import datetime
+import time
 
-BASE_URL = "https://dzzb.jnkgjtdzzbgs.com"
-KEY_WORDS = ["晋圣", "天安"]
-MAX_PAGES = 10        # 查找前 N 页（1..N）
+# 将当前目录加入路径，确保能导入自定义模块
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (compatible; JNKG-Bot/1.0)"
-}
+# 导入自定义模块
+try:
+    from spider_core import JnkgBiddingSpider
+    from feishu_writer import FeishuBitableWriter
+    from feishu_notifier import FeishuNotifier
+except ImportError as e:
+    print(f"导入模块失败，请确保相关.py文件在当前目录: {e}")
+    sys.exit(1)
 
+def get_feishu_config():
+    """从环境变量获取飞书配置（安全）"""
+    config = {
+        'app_id': os.getenv('FEISHU_APP_ID'),
+        'app_secret': os.getenv('FEISHU_APP_SECRET'),
+        'app_token': os.getenv('FEISHU_APP_TOKEN'),
+        'table_id': os.getenv('FEISHU_TABLE_ID'),
+        'webhook_url': os.getenv('FEISHU_WEBHOOK_URL')
+    }
+    
+    # 清理可能的多余字符
+    if config['app_token'] and '&' in config['app_token']:
+        config['app_token'] = config['app_token'].split('&')[0]
+    
+    if config['table_id'] and '&' in config['table_id']:
+        config['table_id'] = config['table_id'].split('&')[0]
+    
+    # 检查关键配置是否存在
+    missing = [k for k, v in config.items() if not v and k != 'webhook_url']
+    if missing:
+        print(f"⚠️  警告：以下飞书配置缺失: {missing}")
+        return None
+    
+    print(f"🔧 飞书配置详情:")
+    print(f"   App ID: {config['app_id'][:10]}..." if config['app_id'] else "   App ID: 未设置")
+    print(f"   App Token: {config['app_token']}")
+    print(f"   Table ID: {config['table_id']}")
+    print(f"   Webhook URL: {'已设置' if config['webhook_url'] else '未设置'}")
+    
+    return config
 
-def get_stop_day(max_day=10):
-    return datetime.now() - timedelta(days=max_day)
-
-
-def fetch_one_page(column_path, page=1):
-    """网络模式：返回该页 (rows, earliest_date or None)。遇到网络错误返回 ([], None)。"""
-    if page == 1:
-        url = f"{BASE_URL}/cms/default/webfile/{column_path}/index.html"
-    else:
-        url = f"{BASE_URL}/cms/default/webfile/{column_path}/index_{page}.html"
-
+def run_full_process(days_limit=10):
+    """完整的抓取和上传流程"""
+    print("="*60)
+    print(f"开始执行晋能控股招标数据抓取任务")
+    print(f"时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("="*60)
+    
+    # 1. 初始化爬虫并抓取数据
+    print("\n🔍 步骤1: 开始抓取招标数据...")
+    spider = JnkgBiddingSpider()
+    
+    # 使用新的多网站搜索方法
+    all_data = spider.search_all_websites(days_limit=days_limit)
+    
+    if not all_data:
+        print("本次未抓取到符合条件的数据。任务结束。")
+        # 尝试发送空数据通知（如果配置了webhook）
+        feishu_config = get_feishu_config()
+        if feishu_config and feishu_config.get('webhook_url'):
+            try:
+                notifier = FeishuNotifier(feishu_config['webhook_url'])
+                notifier.send_text("🕷️ 招标数据抓取完成\n\n本次未抓取到符合条件的数据。")
+            except Exception as e:
+                print(f"发送空数据通知失败: {e}")
+        return False, 0, 0, 0
+    
+    df = pd.DataFrame(all_data)
+    print(f"✅ 抓取完成，共获得 {len(df)} 条唯一数据。")
+    
+    # 2. 上传到飞书多维表格
+    print("\n📤 步骤2: 准备上传数据到飞书多维表格...")
+    feishu_config = get_feishu_config()
+    
+    if not feishu_config:
+        print("由于飞书配置不全，跳过上传步骤。")
+        # 本地保存一份CSV作为备份
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        csv_file = f"本地备份_晋能控股招标_{timestamp}.csv"
+        df.to_csv(csv_file, index=False, encoding='utf-8-sig')
+        print(f"数据已本地备份至: {csv_file}")
+        return True, len(df), 0, 0
+    
     try:
-        r = requests.get(url, headers=HEADERS, timeout=20)
-        r.raise_for_status()
-    except requests.RequestException:
-        # log network error to help debugging (will return empty page)
-        try:
-            import sys
-            print(f"[WARN] fetch failed: {url}", file=sys.stderr)
-        except Exception:
-            pass
-        return [], None
-    # log status and optionally save raw HTML for debugging
-    try:
-        status = r.status_code
-        import os
-        os.makedirs("debug_html", exist_ok=True)
-        fname = os.path.join("debug_html", f"{column_path}_{page}.html")
-        with open(fname, "w", encoding="utf-8") as fh:
-            fh.write(r.text)
-        print(f"[DEBUG] fetched {url} status={status} saved={fname}")
-    except Exception:
-        pass
-
-    r.encoding = "utf-8"
-    html = etree.HTML(r.text)
-
-    rows = []
-    trs = html.xpath('//div[@class="list"]//tr')
-    if len(trs) > 0:
-        trs = trs[1:]
-    else:
-        trs = []
-
-    earliest = None
-    for tr in trs:
-        tds = tr.xpath("./td")
-        if len(tds) < 3:
-            continue
-        pub = tds[0].xpath("string(.)").strip()
-
-        title_nodes = tds[1].xpath("./a/@title")
-        title = title_nodes[0].strip() if title_nodes else tds[1].xpath("string(.)").strip()
-
-        href_nodes = tds[1].xpath("./a/@href")
-        if not href_nodes:
-            continue
-        rel_link = href_nodes[0]
-        abs_link = BASE_URL + rel_link if rel_link.startswith("/") else rel_link
-
-        try:
-            pub_dt = dtparser.parse(pub)
-        except Exception:
-            pub_dt = datetime.now()
-
-        if earliest is None or pub_dt < earliest:
-            earliest = pub_dt
-
-        rows.append({
-            "pub_date": pub_dt,
-            "title": title,
-            "link": abs_link,
-            "kind": column_path,
-        })
-
-    return rows, earliest
-
-
-def fetch_one_page_from_html(html_text, column_path):
-    """解析给定 HTML 并返回 (rows, earliest)。用于 dry-run 测试。"""
-    html = etree.HTML(html_text)
-
-    rows = []
-    trs = html.xpath('//div[@class="list"]//tr')
-    if len(trs) > 0:
-        trs = trs[1:]
-    else:
-        trs = []
-
-    earliest = None
-    for tr in trs:
-        tds = tr.xpath("./td")
-        if len(tds) < 3:
-            continue
-        pub = tds[0].xpath("string(.)").strip()
-
-        title_nodes = tds[1].xpath("./a/@title")
-        title = title_nodes[0].strip() if title_nodes else tds[1].xpath("string(.)").strip()
-
-        href_nodes = tds[1].xpath("./a/@href")
-        if not href_nodes:
-            continue
-        rel_link = href_nodes[0]
-        abs_link = BASE_URL + rel_link if rel_link.startswith("/") else rel_link
-
-        try:
-            pub_dt = dtparser.parse(pub)
-        except Exception:
-            pub_dt = datetime.now()
-
-        if earliest is None or pub_dt < earliest:
-            earliest = pub_dt
-
-        rows.append({
-            "pub_date": pub_dt,
-            "title": title,
-            "link": abs_link,
-            "kind": column_path,
-        })
-
-    return rows, earliest
-
-
-def fetch_column(column, max_pages=50, fetcher=None):
-    """翻页直到超出最近 N 天或遇到空页/max_pages。
-
-    返回值已按日期过滤，只包含 >= stop_day 的条目。
-    """
-    page = 1
-    all_rows = []
-    # 翻页直到达到 max_pages 或遇到空页；不再按日期过滤
-    while page <= max_pages:
-        if fetcher:
-            rows, earliest = fetcher(column, page)
+        # 初始化飞书写入器
+        writer = FeishuBitableWriter(
+            app_id=feishu_config['app_id'],
+            app_secret=feishu_config['app_secret'],
+            app_token=feishu_config['app_token'],
+            table_id=feishu_config['table_id'],
+            debug=True
+        )
+        
+        # 上传数据，使用'项目编号'作为去重依据
+        success, fail, duplicate = writer.add_records(df, unique_key_field='项目编号')
+        
+        print("\n📊 上传结果汇总:")
+        print(f"   成功新增: {success} 条")
+        print(f"   重复跳过: {duplicate} 条")
+        print(f"   添加失败: {fail} 条")
+        
+        # 3. 本地也保存一份CSV作为备份
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        csv_file = f"晋能控股招标_{timestamp}.csv"
+        df.to_csv(csv_file, index=False, encoding='utf-8-sig')
+        print(f"📁 数据已备份至本地文件: {csv_file}")
+        
+        # 4. 发送飞书机器人提醒（如果配置了webhook）
+        if feishu_config.get('webhook_url'):
+            print("\n📨 步骤3: 发送飞书机器人提醒...")
+            try:
+                notifier = FeishuNotifier(feishu_config['webhook_url'])
+                # 使用卡片消息格式
+                report = notifier.send_crawler_report_with_card(
+                    total_count=len(df),
+                    success_count=success,
+                    duplicate_count=duplicate,
+                    fail_count=fail
+                )
+                if report and report.get("StatusCode") == 0:
+                    print("✅ 飞书机器人卡片提醒发送成功！")
+                else:
+                    # 如果卡片消息失败，尝试普通文本消息
+                    print(f"⚠️  卡片消息发送失败，尝试文本消息...")
+                    report = notifier.send_crawler_report(
+                        total_count=len(df),
+                        success_count=success,
+                        duplicate_count=duplicate,
+                        fail_count=fail
+                    )
+                    if report and report.get("StatusCode") == 0:
+                        print("✅ 飞书机器人文本提醒发送成功！")
+                    else:
+                        print(f"⚠️  飞书机器人提醒发送失败，响应: {report}")
+            except Exception as e:
+                print(f"❌ 发送飞书机器人提醒时出错: {e}")
         else:
-            rows, earliest = fetch_one_page(column, page)
-        if not rows:
-            break
-        all_rows.extend(rows)
-        page += 1
-
-    return all_rows
-
-
-def main():
-    parser = argparse.ArgumentParser(description="生成晋能控股招标 RSS，可用 --dry-run 在本地示例 HTML 上测试解析。")
-    parser.add_argument("--dry-run", action="store_true", help="使用内置示例 HTML 运行（不访问网络）")
-    args = parser.parse_args()
-
-    fg = FeedGenerator()
-    fg.title("晋能控股-晋圣/天安 招标监控")
-    fg.link(href=BASE_URL, rel="alternate")
-    fg.description(f"查找第1-{MAX_PAGES}页且含关键词{KEY_WORDS}")
-    fg.language("zh-cn")
-
-    total = 0
-    kw_lower = [k.lower() for k in KEY_WORDS]
-
-    fetcher = None
-    out = "filtered.xml"
-    if args.dry_run:
-        # 构造示例 HTML（包含一条匹配关键词、一条不匹配）
-        today = datetime.now().date()
-        d0 = today.strftime("%Y-%m-%d")
-        d5 = (today - timedelta(days=5)).strftime("%Y-%m-%d")
-        sample_html = f"""
-<div class="list">
-<table>
-  <tr><th>date</th><th>title</th><th>type</th></tr>
-  <tr>
-    <td>{d0}</td>
-    <td><a href="/notice/1" title="关于 晋圣 项目招标">关于 晋圣 项目招标</a></td>
-    <td>招标</td>
-  </tr>
-  <tr>
-    <td>{d5}</td>
-    <td><a href="/notice/2" title="普通 项目">普通 项目</a></td>
-    <td>公告</td>
-  </tr>
-</table>
-</div>
-"""
-        def make_dry_fetch(html_text):
-            def _f(column, page):
-                if page > 1:
-                    return [], None
-                return fetch_one_page_from_html(html_text, column)
-            return _f
-
-        fetcher = make_dry_fetch(sample_html)
-        out = "filtered_dry.xml"
-
-    for col in ["1ywgg1", "2ywgg1", "3ywgg1"]:
-        rows = fetch_column(col, fetcher=fetcher)
-        for r in rows:
-            if not any(k in r["title"].lower() for k in kw_lower):
-                continue
-            fe = fg.add_entry()
-            fe.title(f"[{col}]{r['title']}")
-            fe.link(href=r["link"])
-            fe.description(r["title"])
-            fe.guid(hashlib.md5(r["link"].encode()).hexdigest(), permalink=False)
-            dt = r["pub_date"]
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=datetime.now().astimezone().tzinfo)
-            fe.pubDate(dt)
-            total += 1
-
-    fg.rss_file(out)
-    print(f"[{datetime.now():%F %T}] 输出 {out} 共 {total} 条 (dry-run={args.dry_run})")
-
+            print("\nℹ️  未配置飞书Webhook URL，跳过通知步骤")
+        
+        return True, len(df), success, duplicate
+        
+    except Exception as e:
+        print(f"❌ 上传到飞书过程中发生错误: {e}")
+        # 出错时也保存本地备份
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        csv_file = f"错误备份_晋能控股招标_{timestamp}.csv"
+        df.to_csv(csv_file, index=False, encoding='utf-8-sig')
+        print(f"数据已保存至本地备份文件: {csv_file}")
+        
+        # 错误时也发送提醒（如果配置了webhook）
+        if feishu_config and feishu_config.get('webhook_url'):
+            try:
+                notifier = FeishuNotifier(feishu_config['webhook_url'])
+                error_msg = f"❌ 招标数据抓取任务失败\n\n错误时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n错误详情: {str(e)}"
+                notifier.send_text(error_msg)
+                print("✅ 错误通知已发送至飞书。")
+            except Exception as notify_error:
+                print(f"❌ 发送错误通知也失败了: {notify_error}")
+            
+        return False, len(df), 0, 0
 
 if __name__ == "__main__":
-    main()
+    """
+    主入口。
+    当直接运行此脚本时，执行一次完整的抓取和上传。
+    此脚本也可被 GitHub Actions 或 APScheduler 调用。
+    """
+    # 执行完整的抓取上传流程（默认查最近10天）
+    run_full_process(days_limit=10)
