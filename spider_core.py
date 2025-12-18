@@ -61,6 +61,22 @@ class JnkgBiddingSpider:
             'Origin': self.base_url,
         }
         
+        # ============【在此处添加代理配置】============
+        # 代理配置
+        self.proxy_config = {
+            'http': 'http://117.69.236.166:8089',
+            'https': 'http://117.69.236.166:8089'
+        }
+        
+        # 检查是否在GitHub Actions环境
+        self.is_github_actions = os.getenv('GITHUB_ACTIONS') == 'true'
+        self.use_proxy = self.is_github_actions  # 在GitHub Actions中自动使用代理
+        
+        if self.use_proxy:
+            print("🌐 检测到GitHub Actions环境，启用代理")
+            print(f"🔗 代理地址: {self.proxy_config['http']}")
+        # ============【代理配置结束】============
+        
         # 显示当前工作目录
         print(f"📂 当前工作目录: {os.getcwd()}")
         print(f"📂 输出文件将保存在此目录")
@@ -104,12 +120,19 @@ class JnkgBiddingSpider:
                 elif search_field == "agentCompanyName":
                     payload["dto"]["agentCompanyName"] = keyword
                 
-                response = requests.post(
-                    self.api_url,
-                    headers=headers,
-                    data=json.dumps(payload, ensure_ascii=False).encode('utf-8'),
-                    timeout=30
-                )
+                 request_params = {
+                    'url': self.api_url,
+                    'headers': headers,
+                    'data': json.dumps(payload, ensure_ascii=False).encode('utf-8'),
+                    'timeout': 30
+                }
+                
+                if self.use_proxy:
+                    request_params['proxies'] = self.proxy_config
+                    if page_no == 1:
+                        print(f"📡 使用代理请求: {self.proxy_config['http']}")
+                
+                response = requests.post(**request_params)
                 
                 if response.status_code != 200:
                     logger.error(f"HTTP {response.status_code}: 请求失败")
@@ -131,7 +154,7 @@ class JnkgBiddingSpider:
                     break
                     
                 page_no += 1
-                time.sleep(0.5)
+                time.sleep(1.5)
                 
             except Exception as e:
                 logger.error(f"搜索异常: {e}")
@@ -219,6 +242,8 @@ class JnkgBiddingSpider:
         print(f"搜索关键词: {self.keywords}")
         print(f"时间范围: 最近{days_limit}天")
         print(f"网站数量: {len(self.website_configs)}个")
+        if self.use_proxy:
+            print(f"📡 使用代理: {self.proxy_config['http']}")
         print(f"{'='*60}\n")
         
         for config in self.website_configs:
