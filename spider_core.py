@@ -8,7 +8,7 @@ import logging
 import sys
 
 # 配置日志
-logging.basicConfig(
+logging.logging.logging..basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
@@ -82,7 +82,7 @@ class JnkgBiddingSpider:
         print(f"📂 输出文件将保存在此目录")
         print("="*60)
     
-    def search_by_keyword(self, keyword, search_field="title", days_limit=10, site_id=None, category_id=None, referer_url=None):
+        def search_by_keyword(self, keyword, search_field="title", days_limit=10, site_id=None, category_id=None, referer_url=None):
         """按关键词搜索特定网站"""
         all_data = []
         page_no = 1
@@ -120,13 +120,15 @@ class JnkgBiddingSpider:
                 elif search_field == "agentCompanyName":
                     payload["dto"]["agentCompanyName"] = keyword
                 
-                 request_params = {
+                # 构建基础请求参数
+                request_params = {
                     'url': self.api_url,
                     'headers': headers,
                     'data': json.dumps(payload, ensure_ascii=False).encode('utf-8'),
                     'timeout': 30
                 }
                 
+                # 仅当需要代理时，才添加 proxies 参数
                 if self.use_proxy:
                     request_params['proxies'] = self.proxy_config
                     if page_no == 1:
@@ -136,6 +138,7 @@ class JnkgBiddingSpider:
                 
                 if response.status_code != 200:
                     logger.error(f"HTTP {response.status_code}: 请求失败")
+                    print(f"❌ 请求失败，状态码: {response.status_code}")
                     break
                 
                 data = response.json()
@@ -144,6 +147,7 @@ class JnkgBiddingSpider:
                 
                 if page_no == 1:
                     logger.info(f"网站配置[site_id={site_id}, category_id={category_id}] - 总共找到 {total} 条相关记录")
+                    print(f"✅ 请求成功，找到 {total} 条相关记录")
                 
                 if not rows:
                     break
@@ -154,10 +158,20 @@ class JnkgBiddingSpider:
                     break
                     
                 page_no += 1
-                time.sleep(1.5)
+                time.sleep(1)  # 增加延迟，避免请求过快
                 
+            except requests.exceptions.ProxyError as e:
+                logger.error(f"代理连接失败: {e}")
+                print(f"❌ 代理连接失败: {e}")
+                print("尝试使用备用代理或直接连接...")
+                break
+            except requests.exceptions.ConnectionError as e:
+                logger.error(f"连接错误: {e}")
+                print(f"❌ 连接错误: {e}")
+                break
             except Exception as e:
                 logger.error(f"搜索异常: {e}")
+                print(f"❌ 搜索异常: {e}")
                 break
         
         return all_data
@@ -170,7 +184,7 @@ class JnkgBiddingSpider:
         logger.info(f"\n{'='*60}")
         logger.info(f"开始爬取网站: {website_name}")
         logger.info(f"网站URL: {website_config['url']}")
-        logger.info(f"配置: site_id={website_config['site_id']}, category_id={website_config['category_id']}")
+        logger.        logger.info(f"配置: site_id={website_configwebsite_config['site_id']}, category_id={website_configwebsite_config['category_id']}")
         
         for keyword in self.keywords:
             logger.info(f"处理关键词: {keyword}")
@@ -475,3 +489,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
