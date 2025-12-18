@@ -7,8 +7,8 @@ import time
 import logging
 import sys
 
-# 配置日志
-logging.logging.logging..basicConfig(
+# 配置日志 - 修复语法错误
+logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
@@ -82,7 +82,8 @@ class JnkgBiddingSpider:
         print(f"📂 输出文件将保存在此目录")
         print("="*60)
     
-        def search_by_keyword(self, keyword, search_field="title", days_limit=10, site_id=None, category_id=None, referer_url=None):
+    # 注意：search_by_keyword 方法应该与 __init__ 方法同级，不是内部方法
+    def search_by_keyword(self, keyword, search_field="title", days_limit=10, site_id=None, category_id=None, referer_url=None):
         """按关键词搜索特定网站"""
         all_data = []
         page_no = 1
@@ -184,7 +185,8 @@ class JnkgBiddingSpider:
         logger.info(f"\n{'='*60}")
         logger.info(f"开始爬取网站: {website_name}")
         logger.info(f"网站URL: {website_config['url']}")
-        logger.        logger.info(f"配置: site_id={website_configwebsite_config['site_id']}, category_id={website_configwebsite_config['category_id']}")
+        # 修复：删除多余的 logger. 和重复的变量名
+        logger.info(f"配置: site_id={website_config['site_id']}, category_id={website_config['category_id']}")
         
         for keyword in self.keywords:
             logger.info(f"处理关键词: {keyword}")
@@ -489,4 +491,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
