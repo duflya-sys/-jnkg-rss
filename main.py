@@ -46,6 +46,36 @@ def get_feishu_config():
     print(f"   Webhook URL: {'已设置' if config['webhook_url'] else '未设置'}")
     
     return config
+# 在main.py中添加代理测试函数
+def test_network_connectivity():
+    """测试网络连通性"""
+    print("🔍 测试网络连通性...")
+    
+    # 检查是否在GitHub Actions环境
+    is_github = os.getenv('GITHUB_ACTIONS') == 'true'
+    print(f"GitHub Actions环境: {is_github}")
+    
+    if is_github:
+        print("🌐 检测到GitHub Actions环境，将启用代理")
+        print("代理地址: http://117.69.236.166:8089")
+    
+    # 导入代理测试
+    try:
+        from proxy_test import test_proxy
+        test_proxy()
+    except ImportError:
+        print("⚠️  代理测试模块未找到，跳过测试")
+
+# 在run_full_process函数开头添加
+def run_full_process(days_limit=10):
+    """完整的抓取和上传流程"""
+    print("="*60)
+    print(f"开始执行晋能控股招标数据抓取任务")
+    print(f"时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("="*60)
+    
+    # 网络测试
+    test_network_connectivity()
 
 def run_full_process(days_limit=10):
     """完整的抓取和上传流程"""
