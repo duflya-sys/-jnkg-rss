@@ -4,7 +4,7 @@ import os
 
 def test_proxy():
     """测试代理是否可用"""
-    proxy_url = "http://117.69.236.166:8089"
+    proxy_url = "http://113.121.39.222:9999"
     test_urls = [
         "https://www.baidu.com",
         "https://dzzb.jnkgjtdzzbgs.com",
