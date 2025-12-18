@@ -2,23 +2,82 @@ name: 晋能控股招标数据自动抓取
 
 on:
   schedule:
-    - cron: '0 10 * * 3,5'  # 每周三、五 UTC 10:00 = 北京时间18:00
-  workflow_dispatch:
+    # 每周三和周五的18:00（北京时间）
+    # GitHub Actions 使用 UTC 时间，北京时间 18:00 = UTC 10:00
+    - cron: '0 10 * * 3,5'
+  
+  workflow_dispatch:  # 允许手动触发
+    inputs:
+      days_limit:
+        description: '抓取天数限制'
+        required: false
+        default: '10'
+        type: string
 
 jobs:
   crawl-and-upload:
     runs-on: ubuntu-latest
+    timeout-minutes: 15  # 设置超时时间
+    
     steps:
-    - uses: actions/checkout@v3
-    - uses: actions/setup-python@v4
+    - name: 检出代码
+      uses: actions/checkout@v3
+    
+    - name: 设置Python环境
+      uses: actions/setup-python@v4
       with:
         python-version: '3.9'
-    - run: pip install -r requirements.txt
-    - name: 运行抓取任务
+    
+    - name: 安装依赖
+      run: |
+        pip install -r requirements.txt
+        # 安装网络测试工具
+        pip install ping3
+        
+    - name: 网络连通性测试
+      run: |
+        echo "🌐 测试网络连通性..."
+        echo "1. 测试百度..."
+        curl -I --connect-timeout 10 https://www.baidu.com || echo "百度连接失败"
+        
+        echo "2. 测试目标网站..."
+        curl -I --connect-timeout 10 https://dzzb.jnkgjtdzzbgs.com || echo "目标网站直接连接失败"
+        
+        echo "3. 测试代理服务器..."
+        # 测试代理是否可用
+        timeout 10 curl -x http://117.69.236.166:8089 -I https://www.baidu.com || echo "代理测试失败"
+    
+    - name: 运行数据抓取任务
       env:
         FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
         FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
         FEISHU_APP_TOKEN: ${{ secrets.FEISHU_APP_TOKEN }}
         FEISHU_TABLE_ID: ${{ secrets.FEISHU_TABLE_ID }}
         FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
-      run: python main.py
+        GITHUB_ACTIONS: 'true'  # 告诉爬虫这是GitHub Actions环境
+      run: |
+        echo "🕷️ 开始执行晋能控股招标数据抓取..."
+        echo "当前时间: $(date)"
+        echo "工作目录: $(pwd)"
+        echo "文件列表:"
+        ls -la
+        
+        echo "环境变量检查:"
+        echo "GITHUB_ACTIONS: $GITHUB_ACTIONS"
+        
+        echo "运行主程序..."
+        python main.py
+        
+        echo "任务执行完成"
+        echo "当前时间: $(date)"
+    
+    - name: 上传抓取日志和备份文件
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: crawl-data-${{ github.run_number }}
+        path: |
+          *.log
+          *.csv
+          bidding_crawler.log
+        retention-days: 7
